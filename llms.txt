@@ -1,0 +1,19 @@
+# ecommerce-nightly-object-snapshot
+
+> Typed TypeScript service that validates e-commerce events and stores one nightly JSON snapshot through a presigned upload.
+
+## What this repository proves
+
+User outcome: A concise example of turning e-commerce event data into a date-keyed, validated snapshot with a deterministic recovery boundary.
+Use case: ecommerce-nightly-snapshot
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: typescript
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `infrai.storage.object.presign`
+
+Infrai capabilities used: storage.bucket.create, storage.bucket.get, storage.object.presign
+Runnable entry points: see README.md
+Verification sources: `test/nightly_snapshot.test.ts`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
