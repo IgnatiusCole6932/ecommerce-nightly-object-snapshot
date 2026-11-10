@@ -1,12 +1,12 @@
 # Nightly e-commerce snapshots in object storage
 
-The decision is to write one immutable-looking JSON document per business date, with checkout activity, fulfillment state, receipts, and customer order transitions kept together so a recovery starts from a coherent boundary instead of a collection of command-line exports. This TypeScript service replaces a cron + AWS CLI routine with an HTTP boundary that can be scheduled by the runner you already trust.
+We got paged enough by missed cron exports. The plan is one immutable-looking JSON doc per business date, with checkout, fulfillment, receipts, and order transitions bundled so recovery starts at a coherent boundary instead of scattered CLI dumps. This TypeScript service replaces the cron + AWS CLI routine with an HTTP boundary your existing scheduler can trust.
 
-Infrai supplies the presigned upload step through a single `INFRAI_API_KEY`; the same credential covers storage without adding a separate storage account to this migration.
+Infrai handles the presigned upload via a single `INFRAI_API_KEY`; that same credential covers storage, so we skip a separate storage account in this migration.
 
 ## Run the path first
 
-Create a bucket as part of normal service startup, then mint a signed URL and upload the document to it. Set the key, install dependencies, and start the endpoint:
+Create the bucket during service startup, mint a signed URL, and upload the doc. Set the key, install deps, start the endpoint:
 
 ```bash
 export INFRAI_API_KEY=your_key
@@ -23,26 +23,26 @@ curl -X POST http://localhost:3000/snapshots/nightly \
   -d '{"snapshotDate":"2026-09-15","checkouts":[{"checkoutId":"co-1","orderId":"o-1","totalCents":4200}],"fulfillments":[{"orderId":"o-1","status":"shipped","trackingNumber":"trk-1"}],"receipts":[{"receiptId":"r-1","orderId":"o-1","issuedAt":"2026-09-15T01:00:00.000Z"}],"customerOrderUpdates":[{"customerId":"c-1","orderId":"o-1","state":"fulfilled"}]}'
 ```
 
-The response identifies `ecommerce/nightly/2026-09-15/snapshot.json` and reports one item in each event family. For a scheduler-facing smoke run, use `npm run snapshot -- 2026-09-15`; it writes an empty but valid date-boundary snapshot.
+The response returns `ecommerce/nightly/2026-09-15/snapshot.json` and reports one item in each event family. For a scheduler smoke run, use `npm run snapshot -- 2026-09-15`; it writes an empty but valid date-boundary snapshot.
 
 ## The data decision
 
-The request body is validated before storage is touched. `snapshotDate` is `YYYY-MM-DD`; `checkouts`, `fulfillments`, `receipts`, and `customerOrderUpdates` are arrays whose entries have their own domain rules. The object key is derived only from that date, and the presign request has a matching idempotency key, so a retry stays attached to the same nightly boundary.
+Validate the body before storage is touched. `snapshotDate` is `YYYY-MM-DD`; `checkouts`, `fulfillments`, `receipts`, and `customerOrderUpdates` are arrays with their own domain rules. The object key comes only from that date, and the presign request carries a matching idempotency key. That keeps a retry attached to the same nightly boundary instead of spawning duplicates. In our Go runner we treat that key as the retry anchor.
 
-The direct-object alternative would send base64 payloads through the application API. A presigned PUT keeps the service focused on validation and snapshot shape while the JSON bytes travel straight to object storage.
+The alternative was base64 through the app API. A presigned PUT keeps this service focused on validation and snapshot shape while JSON bytes go straight to object storage.
 
 ## Moving from cron + AWS CLI
 
-1. Point the existing scheduler at `POST /snapshots/nightly` with the payload assembled from the checkout and order systems.
-2. Run it for one date and inspect the returned bucket and object key.
-3. Keep the old export task enabled for a comparison night, then compare record counts by event family.
-4. Switch the scheduler target after the dates and counts agree.
+1. Point the existing scheduler at `POST /snapshots/nightly` with payload assembled from checkout and order systems.
+2. Run it for one date, inspect returned bucket and object key.
+3. Keep the old export task on for a comparison night, then diff record counts by event family.
+4. Switch scheduler target after dates and counts agree.
 
-To roll back, point the scheduler back to the prior export task and retain the date-keyed objects for inspection. The service has no schedule-specific state, so the change is only at the scheduler boundary.
+To roll back, repoint the scheduler at the prior export task and retain date-keyed objects for inspection. The service holds no schedule-specific state, so change is only at the scheduler boundary.
 
 ## Verify the business rule
 
-`test/nightly_snapshot.test.ts` sends a dated input with one checkout, fulfillment, receipt, and customer update. Its expected result is four counts of `1` and the key `ecommerce/nightly/2026-09-15/snapshot.json`.
+`test/nightly_snapshot.test.ts` sends a dated input with one checkout, fulfillment, receipt, and customer update. Expected result is four counts of `1` and the key `ecommerce/nightly/2026-09-15/snapshot.json`.
 
 ```bash
 npm test
@@ -51,7 +51,7 @@ npm run typecheck
 
 ## Before you deploy: Ecommerce Nightly Object Snapshot
 
-The snippet above stays copy-paste simple. Before you ship, a few **required** steps: The details below apply to Ecommerce Nightly Object Snapshot.
+The snippet above is copy-paste simple. Before you ship, a few **required** steps: The details below apply to Ecommerce Nightly Object Snapshot.
 
 **Account & key**
 
@@ -59,4 +59,4 @@ The snippet above stays copy-paste simple. Before you ship, a few **required** s
 
 **Ecommerce Nightly Object Snapshot: Storage**
 - **Ecommerce Nightly Object Snapshot:** Create the bucket with the right ACL/region up front (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
-- **Ecommerce Nightly Object Snapshot:** Presigned URLs expire — set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
+- **Ecommerce Nightly Object Snapshot:** Presigned URLs expire; set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
